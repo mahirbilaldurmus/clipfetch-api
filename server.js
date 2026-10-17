@@ -89,15 +89,27 @@ app.post("/download", (req, res) => {
   const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const output = path.join(DOWNLOAD_DIR, `${id}.%(ext)s`);
 
-  const downloader = spawn("yt-dlp", [
+  const args = [
     "--no-playlist",
     "--max-filesize", "100M",
-    "--js-runtimes", "node",
+    "--js-runtimes", "node"
+  ];
+
+  if (detectedPlatform === "youtube") {
+    args.push(
+      "--extractor-args",
+      "youtube:player_client=tv,web_safari"
+    );
+  }
+
+  args.push(
     "-f", "best[ext=mp4]/best",
     "--merge-output-format", "mp4",
     "-o", output,
     videoUrl
-  ]);
+  );
+
+  const downloader = spawn("yt-dlp", args);
 
   let errorText = "";
   let responded = false;
@@ -130,7 +142,9 @@ app.post("/download", (req, res) => {
 
       responded = true;
       return res.status(400).json({
-        error: "Video indirilemedi. Video özel olabilir veya platform erişimi kısıtlamış olabilir."
+        error: detectedPlatform === "youtube"
+          ? "YouTube videoyu sunucumuza vermedi. Erişim kısıtlaması veya doğrulama engeli olabilir."
+          : "Video indirilemedi. İçerik özel olabilir veya platform erişimi kısıtlamış olabilir."
       });
     }
 
@@ -179,6 +193,5 @@ app.get("/files/:name", (req, res) => {
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`ClipFetch API running on port ${PORT}`);
 });
-
 
 
