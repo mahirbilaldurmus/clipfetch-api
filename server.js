@@ -103,9 +103,17 @@ app.post("/download", (req, res) => {
           signal: AbortSignal.timeout(30000)
         });
         const parsed = await apiResponse.json().catch(() => ({}));
-        if (!apiResponse.ok || parsed.status !== 200) {
-          console.error("[EasyDown] API failed:", apiResponse.status, parsed.msg || parsed.error || "unknown error");
-          if (!res.headersSent) res.status(502).json({ error: "YouTube bağlantısı çözümlenemedi. Farklı bir herkese açık video deneyin." });
+        if (!apiResponse.ok || Number(parsed.status) !== 200) {
+          console.error("[EasyDown] API failed:", JSON.stringify({
+            httpStatus: apiResponse.status,
+            apiStatus: parsed.status ?? null,
+            message: parsed.msg || parsed.message || parsed.error || null,
+            code: parsed.code || parsed.errorCode || null,
+            creditsCharged: parsed.billing?.creditsCharged ?? parsed.creditsCharged ?? null
+          }));
+          if (!res.headersSent) res.status(502).json({
+            error: "YouTube API bağlantıyı çözemedi. Render Logs bölümünde [EasyDown] API failed ayrıntısını kontrol et."
+          });
           return;
         }
         const videos = parsed.data?.media?.videos || parsed.data?.videos || [];
