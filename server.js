@@ -114,7 +114,17 @@ app.post("/download", (req, res) => {
           if (!res.headersSent) res.status(502).json({ error: "YouTube için indirilebilir video bulunamadı." });
           return;
         }
-        const mediaResponse = await fetch(video.url, { headers: video.headers || {}, signal: AbortSignal.timeout(90000) });
+        // EasyDown recommends browser-like public headers for YouTube media URLs.
+        // Preserve any per-stream headers returned by the API.
+        const mediaResponse = await fetch(video.url, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "Referer": "https://www.youtube.com/",
+            "Origin": "https://www.youtube.com",
+            ...(video.headers || {})
+          },
+          signal: AbortSignal.timeout(90000)
+        });
         if (!mediaResponse.ok || !mediaResponse.body) {
           console.error("[EasyDown] media download failed:", mediaResponse.status);
           if (!res.headersSent) res.status(502).json({ error: "YouTube video dosyası alınamadı. Lütfen tekrar dene." });
