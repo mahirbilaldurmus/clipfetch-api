@@ -138,11 +138,59 @@ app.post("/download", (req, res) => {
       console.error(`[yt-dlp ${id}] exit code: ${code}`);
       console.error(`[yt-dlp ${id}] stderr: ${errorText}`);
 
+      // Free fallback: use public Invidious instances as a media proxy for YouTube.
+      if (detectedPlatform === "youtube") {
+        (async () => {
+          const match = videoUrl.match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/|live\/))([A-Za-z0-9_-]{11})/);
+          const videoId = match?.[1];
+          const instances = ["https://inv.nadeko.net", "https://yewtu.be", "https://invidious.nerdvpn.de", "https://invidious.privacyredirect.com"];
+          if (videoId) {
+            for (const instance of instances) {
+              let fallbackResponse;
+              try {
+                const endpoint = `${instance}/latest_version?id=${encodeURIComponent(videoId)}&itag=18&local=true`;
+                fallbackResponse = await fetch(endpoint, {
+                  headers: { "User-Agent": "Mozilla/5.0 ClipFetch/1.0" },
+                  redirect: "follow",
+                  signal: AbortSignal.timeout(25000)
+                });
+                const type = (fallbackResponse.headers.get("content-type") || "").toLowerCase();
+                if (!fallbackResponse.ok || !fallbackResponse.body || type.includes("text/html") || type.includes("application/json")) {
+                  console.error("[Invidious fallback]", instance, "HTTP", fallbackResponse.status, "type", type);
+                  if (fallbackResponse.body) await fallbackResponse.body.cancel().catch(() => {});
+                  continue;
+                }
+                const fileName = `${id}.mp4`;
+                const filePath = path.join(DOWNLOAD_DIR, fileName);
+                const { Readable } = require("stream");
+                const { pipeline } = require("stream/promises");
+                await pipeline(Readable.fromWeb(fallbackResponse.body), fs.createWriteStream(filePath));
+                const stats = fs.statSync(filePath);
+                if (stats.size < 1024 || stats.size > 100 * 1024 * 1024) {
+                  fs.unlink(filePath, () => {});
+                  console.error("[Invidious fallback]", instance, "invalid file size", stats.size);
+                  continue;
+                }
+                console.log("[Invidious fallback] downloaded via", instance, "bytes", stats.size);
+                responded = true;
+                return res.json({ downloadUrl: `/files/${encodeURIComponent(fileName)}` });
+              } catch (err) {
+                console.error("[Invidious fallback]", instance, err.message);
+                if (fallbackResponse?.body) await fallbackResponse.body.cancel().catch(() => {});
+              }
+            }
+          }
+          if (!responded && !res.headersSent) {
+            responded = true;
+            return res.status(400).json({ error: "YouTube ücretsiz sunucu yedekleri de bu videoyu alamadı. Video kısıtlı olabilir veya sunucular geçici olarak çalışmıyor olabilir." });
+          }
+        })();
+        return;
+      }
+
       responded = true;
       return res.status(400).json({
-        error: detectedPlatform === "youtube"
-          ? "Ücretsiz YouTube indirmesi bu sunucuda engellendi (403/bot doğrulaması). Ücretli API kullanılmıyor; bu videoyu şu an indiremedik."
-          : "Video indirilemedi. İçerik özel olabilir veya platform erişimi kısıtlamış olabilir."
+        error: "Video indirilemedi. İçerik özel olabilir veya platform erişimi kısıtlamış olabilir."
       });
     }
 
