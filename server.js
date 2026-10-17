@@ -28,14 +28,15 @@ app.get("/health", (req, res) => {
 app.post("/download", (req, res) => {
   const videoUrl = req.body?.url;
 
-  if (
-    typeof videoUrl !== "string" ||
-    !/^https:\/\/(www\.)?tiktok\.com\//i.test(videoUrl)
-  ) {
-    return res.status(400).json({
-      error: "Geçerli bir TikTok bağlantısı gir."
-    });
-  }
+  const supportedUrl =
+  /^https:\/\/(www\.)?tiktok\.com\//i.test(videoUrl || "") ||
+  /^https:\/\/(www\.)?instagram\.com\//i.test(videoUrl || "");
+
+if (typeof videoUrl !== "string" || !supportedUrl) {
+  return res.status(400).json({
+    error: "Geçerli bir TikTok veya Instagram bağlantısı gir."
+  });
+}
 
   const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const output = path.join(DOWNLOAD_DIR, `${id}.%(ext)s`);
