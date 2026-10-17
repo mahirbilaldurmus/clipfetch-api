@@ -92,7 +92,9 @@ app.post("/download", (req, res) => {
   const args = [
     "--no-playlist",
     "--max-filesize", "100M",
-    "--js-runtimes", "node"
+    "--js-runtimes", "node",
+    "--force-ipv4",
+    "--sleep-requests", "1"
   ];
 
   // Let yt-dlp choose its current default YouTube clients.
