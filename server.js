@@ -116,17 +116,21 @@ app.post("/download", (req, res) => {
         }
         // EasyDown recommends browser-like public headers for YouTube media URLs.
         // Preserve any per-stream headers returned by the API.
+        const mediaHeaders = {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+          "Referer": "https://www.youtube.com/",
+          "Origin": "https://www.youtube.com",
+          ...(video.headers || {})
+        };
+        // Media hosts may require byte-range requests; forward the client's Range header.
+        if (req.headers.range) mediaHeaders.Range = req.headers.range;
         const mediaResponse = await fetch(video.url, {
-          headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-            "Referer": "https://www.youtube.com/",
-            "Origin": "https://www.youtube.com",
-            ...(video.headers || {})
-          },
+          headers: mediaHeaders,
+          redirect: "follow",
           signal: AbortSignal.timeout(90000)
         });
         if (!mediaResponse.ok || !mediaResponse.body) {
-          console.error("[EasyDown] media download failed:", mediaResponse.status);
+          console.error("[EasyDown] media download failed:", mediaResponse.status, "content-type:", mediaResponse.headers.get("content-type"), "url-host:", (() => { try { return new URL(video.url).host; } catch { return "invalid"; } })());
           if (!res.headersSent) res.status(502).json({ error: "YouTube video dosyası alınamadı. Lütfen tekrar dene." });
           return;
         }
