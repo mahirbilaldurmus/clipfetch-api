@@ -26,6 +26,7 @@ const PLATFORMS = {
 function detectPlatform(value) {
   try {
     const url = new URL(value);
+
     if (url.protocol !== "https:") return null;
 
     const host = url.hostname.toLowerCase();
@@ -37,7 +38,9 @@ function detectPlatform(value) {
         return platform;
       }
     }
-  } catch {}
+  } catch {
+    return null;
+  }
 
   return null;
 }
@@ -47,14 +50,20 @@ app.get("/", (req, res) => {
 });
 
 app.get("/health", (req, res) => {
-  res.json({ status: "ok", service: "clipfetch-api" });
+  res.json({
+    status: "ok",
+    service: "clipfetch-api"
+  });
 });
 
 app.post("/download", (req, res) => {
   const videoUrl = req.body?.url;
   const requestedPlatform = req.body?.platform;
 
-  if (typeof videoUrl !== "string" || videoUrl.length > 2048) {
+  if (
+    typeof videoUrl !== "string" ||
+    videoUrl.length > 2048
+  ) {
     return res.status(400).json({
       error: "Geçerli bir video bağlantısı gir."
     });
@@ -83,6 +92,7 @@ app.post("/download", (req, res) => {
   const downloader = spawn("yt-dlp", [
     "--no-playlist",
     "--max-filesize", "100M",
+    "--js-runtimes", "node",
     "-f", "best[ext=mp4]/best",
     "--merge-output-format", "mp4",
     "-o", output,
@@ -101,7 +111,7 @@ app.post("/download", (req, res) => {
   });
 
   downloader.on("error", err => {
-    console.error(`[yt-dlp ${id}]`, err);
+    console.error(`[yt-dlp ${id}] process error:`, err);
 
     if (!responded && !res.headersSent) {
       responded = true;
@@ -115,11 +125,12 @@ app.post("/download", (req, res) => {
     if (responded || res.headersSent) return;
 
     if (code !== 0) {
-      console.error(`[yt-dlp ${id}]`, errorText);
+      console.error(`[yt-dlp ${id}] exit code: ${code}`);
+      console.error(`[yt-dlp ${id}] stderr: ${errorText}`);
 
       responded = true;
       return res.status(400).json({
-        error: "Video indirilemedi. İçerik özel olabilir veya platform erişimi kısıtlamış olabilir."
+        error: "Video indirilemedi. Video özel olabilir veya platform erişimi kısıtlamış olabilir."
       });
     }
 
@@ -150,7 +161,9 @@ app.get("/files/:name", (req, res) => {
   const filePath = path.join(DOWNLOAD_DIR, name);
 
   if (!fs.existsSync(filePath)) {
-    return res.status(404).send("Dosya bulunamadı veya süresi doldu.");
+    return res.status(404).send(
+      "Dosya bulunamadı veya süresi doldu."
+    );
   }
 
   res.download(filePath, name, err => {
