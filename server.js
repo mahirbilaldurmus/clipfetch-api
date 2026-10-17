@@ -95,12 +95,8 @@ app.post("/download", (req, res) => {
     "--js-runtimes", "node"
   ];
 
-  if (detectedPlatform === "youtube") {
-    args.push(
-      "--extractor-args",
-      "youtube:player_client=tv,web_safari"
-    );
-  }
+  // Let yt-dlp choose its current default YouTube clients.
+  // Forcing tv/web_safari was triggering 403 / bot verification on this host.
 
   args.push(
     "-f", "best[ext=mp4]/best",
