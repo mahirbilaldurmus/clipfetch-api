@@ -89,6 +89,58 @@ app.post("/download", (req, res) => {
   const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const output = path.join(DOWNLOAD_DIR, `${id}.%(ext)s`);
 
+  // Use EasyDown for YouTube when configured; keep the token server-side.
+  if (detectedPlatform === "youtube" && process.env.EASYDOWN_API_KEY) {
+    (async () => {
+      try {
+        const apiResponse = await fetch("https://api.easydown.org/api/v1/parse", {
+          method: "POST",
+          headers: {
+            "Authorization": "Bearer " + process.env.EASYDOWN_API_KEY,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ url: videoUrl }),
+          signal: AbortSignal.timeout(30000)
+        });
+        const parsed = await apiResponse.json().catch(() => ({}));
+        if (!apiResponse.ok || parsed.status !== 200) {
+          console.error("[EasyDown] API failed:", apiResponse.status, parsed.msg || parsed.error || "unknown error");
+          if (!res.headersSent) res.status(502).json({ error: "YouTube bağlantısı çözümlenemedi. Farklı bir herkese açık video deneyin." });
+          return;
+        }
+        const videos = parsed.data?.videos || parsed.data?.media?.videos || [];
+        const video = videos.find(item => item.hasAudio && item.mimeType === "video/mp4") || videos.find(item => item.hasAudio) || videos.find(item => item.mimeType === "video/mp4") || videos[0];
+        if (!video?.url) {
+          if (!res.headersSent) res.status(502).json({ error: "YouTube için indirilebilir video bulunamadı." });
+          return;
+        }
+        const mediaResponse = await fetch(video.url, { headers: video.headers || {}, signal: AbortSignal.timeout(90000) });
+        if (!mediaResponse.ok || !mediaResponse.body) {
+          console.error("[EasyDown] media download failed:", mediaResponse.status);
+          if (!res.headersSent) res.status(502).json({ error: "YouTube video dosyası alınamadı. Lütfen tekrar dene." });
+          return;
+        }
+        const mime = (video.mimeType || mediaResponse.headers.get("content-type") || "").toLowerCase();
+        const ext = mime.includes("webm") ? "webm" : mime.includes("quicktime") ? "mov" : "mp4";
+        const fileName = id + "." + ext;
+        const filePath = path.join(DOWNLOAD_DIR, fileName);
+        const { Readable } = require("stream");
+        const { pipeline } = require("stream/promises");
+        await pipeline(Readable.fromWeb(mediaResponse.body), fs.createWriteStream(filePath));
+        if (fs.statSync(filePath).size > 100 * 1024 * 1024) {
+          fs.unlink(filePath, () => {});
+          if (!res.headersSent) res.status(413).json({ error: "Video 100 MB sınırını aşıyor." });
+          return;
+        }
+        if (!res.headersSent) res.json({ downloadUrl: "/files/" + encodeURIComponent(fileName) });
+      } catch (err) {
+        console.error("[EasyDown] error:", err.message);
+        if (!res.headersSent) res.status(502).json({ error: "YouTube indirme servisine ulaşılamadı. API anahtarını ve servis durumunu kontrol et." });
+      }
+    })();
+    return;
+  }
+
   const args = [
     "--no-playlist",
     "--max-filesize", "100M",
