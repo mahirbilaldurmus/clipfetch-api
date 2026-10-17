@@ -93,7 +93,7 @@ app.post("/download", (req, res) => {
   if (detectedPlatform === "youtube" && process.env.EASYDOWN_API_KEY) {
     (async () => {
       try {
-        const apiResponse = await fetch("https://api.easydown.org/api/v1/parse", {
+        const apiResponse = await fetch("https://api.easydown.org/api/v1/platforms/youtube/parse", {
           method: "POST",
           headers: {
             "Authorization": "Bearer " + process.env.EASYDOWN_API_KEY,
@@ -108,8 +108,8 @@ app.post("/download", (req, res) => {
           if (!res.headersSent) res.status(502).json({ error: "YouTube bağlantısı çözümlenemedi. Farklı bir herkese açık video deneyin." });
           return;
         }
-        const videos = parsed.data?.videos || parsed.data?.media?.videos || [];
-        const video = videos.find(item => item.hasAudio && item.mimeType === "video/mp4") || videos.find(item => item.hasAudio) || videos.find(item => item.mimeType === "video/mp4") || videos[0];
+        const videos = parsed.data?.media?.videos || parsed.data?.videos || [];
+        const video = videos.find(item => item.hasAudio && item.mimeType === "video/mp4") || videos.find(item => item.hasAudio && item.source === "direct") || videos.find(item => item.hasAudio) || videos.find(item => item.mimeType === "video/mp4") || videos[0];
         if (!video?.url) {
           if (!res.headersSent) res.status(502).json({ error: "YouTube için indirilebilir video bulunamadı." });
           return;
