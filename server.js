@@ -1,5 +1,4 @@
 
-
 const express = require("express");
 const cors = require("cors");
 const { spawn } = require("child_process");
@@ -17,6 +16,32 @@ app.use(cors({
 }));
 app.use(express.json({ limit: "1mb" }));
 
+const PLATFORMS = {
+  tiktok: ["tiktok.com"],
+  instagram: ["instagram.com"],
+  youtube: ["youtube.com", "youtu.be", "youtube-nocookie.com"],
+  x: ["x.com", "twitter.com"]
+};
+
+function detectPlatform(value) {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:") return null;
+
+    const host = url.hostname.toLowerCase();
+
+    for (const [platform, domains] of Object.entries(PLATFORMS)) {
+      if (domains.some(domain =>
+        host === domain || host.endsWith("." + domain)
+      )) {
+        return platform;
+      }
+    }
+  } catch {}
+
+  return null;
+}
+
 app.get("/", (req, res) => {
   res.send("ClipFetch API çalışıyor.");
 });
@@ -27,16 +52,30 @@ app.get("/health", (req, res) => {
 
 app.post("/download", (req, res) => {
   const videoUrl = req.body?.url;
+  const requestedPlatform = req.body?.platform;
 
-  const supportedUrl =
-  /^https:\/\/(www\.)?tiktok\.com\//i.test(videoUrl || "") ||
-  /^https:\/\/(www\.)?instagram\.com\//i.test(videoUrl || "");
+  if (typeof videoUrl !== "string" || videoUrl.length > 2048) {
+    return res.status(400).json({
+      error: "Geçerli bir video bağlantısı gir."
+    });
+  }
 
-if (typeof videoUrl !== "string" || !supportedUrl) {
-  return res.status(400).json({
-    error: "Geçerli bir TikTok veya Instagram bağlantısı gir."
-  });
-}
+  const detectedPlatform = detectPlatform(videoUrl);
+
+  if (!detectedPlatform) {
+    return res.status(400).json({
+      error: "Desteklenen platformlardan geçerli bir HTTPS bağlantısı gir."
+    });
+  }
+
+  if (
+    requestedPlatform &&
+    requestedPlatform !== detectedPlatform
+  ) {
+    return res.status(400).json({
+      error: `Bu bağlantı ${detectedPlatform} platformuna ait. Doğru platformu seç.`
+    });
+  }
 
   const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const output = path.join(DOWNLOAD_DIR, `${id}.%(ext)s`);
@@ -51,36 +90,36 @@ if (typeof videoUrl !== "string" || !supportedUrl) {
   ]);
 
   let errorText = "";
-  let finished = false;
+  let responded = false;
 
-  downloader.stderr.on("data", (data) => {
+  downloader.stderr.on("data", data => {
     errorText += data.toString();
   });
 
-  downloader.stdout.on("data", (data) => {
+  downloader.stdout.on("data", data => {
     console.log(`[yt-dlp ${id}] ${data.toString().trim()}`);
   });
 
-  downloader.on("error", (err) => {
-    console.error(`[yt-dlp ${id}] process error:`, err);
+  downloader.on("error", err => {
+    console.error(`[yt-dlp ${id}]`, err);
 
-    if (!res.headersSent) {
+    if (!responded && !res.headersSent) {
+      responded = true;
       res.status(500).json({
         error: "İndirme aracı başlatılamadı."
       });
     }
   });
 
-  downloader.on("close", (code) => {
-    if (finished) return;
-    finished = true;
+  downloader.on("close", code => {
+    if (responded || res.headersSent) return;
 
     if (code !== 0) {
-      console.error(`[yt-dlp ${id}] exit code: ${code}`);
-      console.error(`[yt-dlp ${id}] stderr: ${errorText || "(boş)"}`);
+      console.error(`[yt-dlp ${id}]`, errorText);
 
+      responded = true;
       return res.status(400).json({
-        error: "Video indirilemedi. Render Logs bölümündeki yt-dlp hatasını kontrol et."
+        error: "Video indirilemedi. İçerik özel olabilir veya platform erişimi kısıtlamış olabilir."
       });
     }
 
@@ -88,13 +127,13 @@ if (typeof videoUrl !== "string" || !supportedUrl) {
       .find(name => name.startsWith(id + "."));
 
     if (!file) {
-      console.error(`[yt-dlp ${id}] Dosya bulunamadı.`);
-
+      responded = true;
       return res.status(500).json({
         error: "İndirilen dosya bulunamadı."
       });
     }
 
+    responded = true;
     res.json({
       downloadUrl: `/files/${encodeURIComponent(file)}`
     });
@@ -104,7 +143,7 @@ if (typeof videoUrl !== "string" || !supportedUrl) {
 app.get("/files/:name", (req, res) => {
   const name = path.basename(req.params.name);
 
-  if (!/^\d+-[a-z0-9]+\.(mp4|webm|mkv|m4a)$/i.test(name)) {
+  if (!/^\d+-[a-z0-9]+\.(mp4|webm|mkv|m4a|mov)$/i.test(name)) {
     return res.status(400).send("Geçersiz dosya.");
   }
 
@@ -114,7 +153,7 @@ app.get("/files/:name", (req, res) => {
     return res.status(404).send("Dosya bulunamadı veya süresi doldu.");
   }
 
-  res.download(filePath, name, (err) => {
+  res.download(filePath, name, err => {
     if (err) {
       console.error(`[download] ${name}:`, err);
       return;
@@ -127,5 +166,6 @@ app.get("/files/:name", (req, res) => {
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`ClipFetch API running on port ${PORT}`);
 });
+
 
 
