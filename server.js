@@ -1,4 +1,5 @@
 
+
 const express = require("express");
 const cors = require("cors");
 const { spawn } = require("child_process");
@@ -39,7 +40,7 @@ app.post("/download", (req, res) => {
   const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const output = path.join(DOWNLOAD_DIR, `${id}.%(ext)s`);
 
-  const process = spawn("yt-dlp", [
+  const downloader = spawn("yt-dlp", [
     "--no-playlist",
     "--max-filesize", "100M",
     "-f", "best[ext=mp4]/best",
@@ -51,25 +52,34 @@ app.post("/download", (req, res) => {
   let errorText = "";
   let finished = false;
 
-  process.stderr.on("data", (data) => {
+  downloader.stderr.on("data", (data) => {
     errorText += data.toString();
   });
 
-  process.on("error", () => {
+  downloader.stdout.on("data", (data) => {
+    console.log(`[yt-dlp ${id}] ${data.toString().trim()}`);
+  });
+
+  downloader.on("error", (err) => {
+    console.error(`[yt-dlp ${id}] process error:`, err);
+
     if (!res.headersSent) {
       res.status(500).json({
-        error: "İndirme servisi başlatılamadı."
+        error: "İndirme aracı başlatılamadı."
       });
     }
   });
 
-  process.on("close", (code) => {
+  downloader.on("close", (code) => {
     if (finished) return;
     finished = true;
 
     if (code !== 0) {
+      console.error(`[yt-dlp ${id}] exit code: ${code}`);
+      console.error(`[yt-dlp ${id}] stderr: ${errorText || "(boş)"}`);
+
       return res.status(400).json({
-        error: "Video indirilemedi. Bağlantıyı kontrol edip tekrar dene."
+        error: "Video indirilemedi. Render Logs bölümündeki yt-dlp hatasını kontrol et."
       });
     }
 
@@ -77,6 +87,8 @@ app.post("/download", (req, res) => {
       .find(name => name.startsWith(id + "."));
 
     if (!file) {
+      console.error(`[yt-dlp ${id}] Dosya bulunamadı.`);
+
       return res.status(500).json({
         error: "İndirilen dosya bulunamadı."
       });
@@ -102,10 +114,17 @@ app.get("/files/:name", (req, res) => {
   }
 
   res.download(filePath, name, (err) => {
-    if (!err) {
-      fs.unlink(filePath, () => {});
+    if (err) {
+      console.error(`[download] ${name}:`, err);
+      return;
     }
+
+    fs.unlink(filePath, () => {});
   });
+});
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`ClipFetch API running on port ${PORT}`);
 });
 
 app.listen(PORT, "0.0.0.0", () => {
