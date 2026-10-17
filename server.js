@@ -143,7 +143,7 @@ app.post("/download", (req, res) => {
         (async () => {
           const match = videoUrl.match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/|live\/))([A-Za-z0-9_-]{11})/);
           const videoId = match?.[1];
-          const instances = ["https://inv.nadeko.net", "https://yewtu.be", "https://invidious.nerdvpn.de", "https://invidious.privacyredirect.com"];
+          const instances = ["https://inv.nadeko.net", "https://invidious.nerdvpn.de", "https://yt.chocolatemoo53.com", "https://invidious.tiekoetter.com"];
           if (videoId) {
             for (const instance of instances) {
               let fallbackResponse;
